@@ -6,7 +6,7 @@ from collections import deque, Counter
 # -----------------------------
 # 1️⃣ Load your trained ASL model
 # -----------------------------
-model = tf.keras.models.load_model("asl_model.h5")
+model = tf.keras.models.load_model("asl_modelv3.h5")
 labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 
           'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 
           'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'del', 'nothing', 'space']
