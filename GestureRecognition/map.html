@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Click to Set Destination</title>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.css" />
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+    }
+    #map {
+      height: 100%;
+      width: 100%;
+    }
+
+    /* Popup button styles */
+    .popup-btn {
+      padding: 6px 12px;
+      margin: 4px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .popup-btn.yes {
+      background-color: #28a745;
+      color: white;
+    }
+    .popup-btn.no {
+      background-color: #dc3545;
+      color: white;
+    }
+    .popup-btn:hover {
+      opacity: 0.9;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-routing-machine/dist/leaflet-routing-machine.js"></script>
+
+  <script>
+    var map = L.map('map');
+    var userMarker = null;
+    var routingControl = null;
+    var userLat, userLon;
+    var destMarker = null;
+
+    setTimeout(() => { map.invalidateSize(); }, 200);    
+
+  // Example supply base data
+  const supplyBases = [
+    { name: "Base A", lat: 20.46891, lon: 85.77413, supplies: 120 },
+    { name: "Base B", lat: 20.46481, lon: 85.76340, supplies: 75 },
+    { name: "Base C", lat: 20.44825, lon: 85.76683, supplies: 30 }
+  ];
+
+  function getSupplyColor(supplies) {
+    if (supplies > 100) return "green";
+    if (supplies >= 50) return "orange";
+    return "red";
+  }
+
+  // Add supply base markers
+  supplyBases.forEach(base => {
+    const marker = L.circleMarker([base.lat, base.lon], {
+      radius: 10,
+      fillColor: getSupplyColor(base.supplies),
+      color: "#000",
+      weight: 1,
+      opacity: 1,
+      fillOpacity: 0.8
+    }).addTo(map);
+
+    marker.bindPopup(`
+      <b>${base.name}</b><br>
+      Supplies: ${base.supplies}
+    `);
+  });
+
+
+    function createRoute(destLat, destLon) {
+      if (routingControl) {
+        map.removeControl(routingControl);
+      }
+      if (destMarker) {
+        map.removeLayer(destMarker);
+      }
+
+      destMarker = L.marker([destLat, destLon]).addTo(map);
+
+      routingControl = L.Routing.control({
+  waypoints: [
+    L.latLng(userLat, userLon),
+    L.latLng(destLat, destLon)
+  ],
+  routeWhileDragging: true,
+  router: L.Routing.osrmv1({
+    serviceUrl: 'https://router.project-osrm.org/route/v1'
+  }),
+  show: false,   // ⬅️ hides the directions panel
+  addWaypoints: false,
+  createMarker: function() { return null; } // optional: stops extra markers
+}).addTo(map);
+
+
+      // Auto zoom to fit route
+      routingControl.on('routesfound', function(e) {
+        var route = e.routes[0];
+        var bounds = L.latLngBounds(route.coordinates);
+        map.fitBounds(bounds, { padding: [30, 30] });
+      });
+    }
+
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(function(pos) {
+        userLat = pos.coords.latitude;
+        userLon = pos.coords.longitude;
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          maxZoom: 19,
+          attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        userMarker = L.marker([userLat, userLon]).addTo(map)
+          .bindPopup("You are here").openPopup();
+
+        map.setView([userLat, userLon], 14);
+
+        map.on('click', function(e) {
+          var clickedLat = e.latlng.lat;
+          var clickedLon = e.latlng.lng;
+
+          var popupContent = `
+            <b>Set this as destination?</b><br>
+            Lat: ${clickedLat.toFixed(5)}, Lon: ${clickedLon.toFixed(5)}<br>
+            <button class="popup-btn yes" id="yesBtn">Yes</button>
+            <button class="popup-btn no" id="noBtn">No</button>
+          `;
+
+          L.popup()
+            .setLatLng([clickedLat, clickedLon])
+            .setContent(popupContent)
+            .openOn(map);
+
+          setTimeout(function() {
+            document.getElementById("yesBtn").onclick = function() {
+              createRoute(clickedLat, clickedLon);
+              map.closePopup();
+            };
+            document.getElementById("noBtn").onclick = function() {
+              map.closePopup();
+            };
+          }, 50);
+        });
+      }, function() {
+        alert("Location access denied. Please allow location.");
+      });
+    } else {
+      alert("Geolocation not supported by this browser.");
+    }
+  </script>
+</body>
+</html>

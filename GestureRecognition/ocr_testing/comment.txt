@@ -1,0 +1,52 @@
+    let model;
+    const webcamElement = document.getElementById("webcam");
+    const canvas = document.getElementById("canvas");
+    const ctx = canvas.getContext("2d");
+    const predictionElement = document.getElementById("prediction");
+
+    // 🔹 Replace with your actual class labels
+    const labels = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z', 'del', 'nothing', 'space']; // Example
+
+    async function setupWebcam() {
+      return new Promise((resolve, reject) => {
+        navigator.mediaDevices
+          .getUserMedia({ video: true })
+          .then((stream) => {
+            webcamElement.srcObject = stream;
+            webcamElement.addEventListener("loadeddata", resolve, false);
+          })
+          .catch(reject);
+      });
+    }
+
+    async function init() {
+      // 🔹 Load your exported TF.js model (put folder next to index.html)
+      model = await tf.loadLayersModel("sign_language_tfjs/model.json");
+      predictionElement.innerText = "✅ Model loaded. Show your sign!";
+      await setupWebcam();
+      predictLoop();
+    }
+
+    async function predictLoop() {
+      while (true) {
+        // Draw video frame to canvas
+        ctx.drawImage(webcamElement, 0, 0, 224, 224);
+
+            // Preprocess frame (normalize to [0,1])
+        let img = tf.browser.fromPixels(canvas)
+          .toFloat()
+          .div(255.0)
+          .expandDims(0); // [1,224,224,3]
+
+        // Predict
+        const predictions = model.predict(img);
+        const probs = predictions.dataSync();
+        const maxIdx = probs.indexOf(Math.max(...probs));
+
+        // Show label + confidence
+        predictionElement.innerText =
+          `Prediction: ${labels[maxIdx]} (${(probs[maxIdx] * 100).toFixed(1)}%)`;
+
+        img.dispose();
+        await tf.nextFrame();
+      }

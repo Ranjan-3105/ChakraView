@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hand Detection + Sign Prediction</title>
+<style>
+  body { display:flex; flex-direction:column; align-items:center; font-family:Arial; background:#111; color:#eee; margin:0; padding:20px; }
+  video { border:1px solid #444; border-radius:6px; }
+  canvas { position:absolute; top:0; left:0; pointer-events:none; }
+  .container { position:relative; width:640px; height:480px; }
+  button { margin:5px; }
+</style>
+</head>
+<body>
+
+<h1>Hand Detection + Sign Prediction</h1>
+<button id="startBtn">Start Webcam</button>
+<button id="stopBtn" disabled>Stop Webcam</button>
+
+<div class="container">
+  <video id="webcam" width="640" height="480" autoplay playsinline></video>
+  <canvas id="overlay" width="640" height="480"></canvas>
+</div>
+
+<p>Bounding boxes appear around hands with predicted letters.</p>
+
+<!-- MediaPipe Hands -->
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.12.0/dist/tf.min.js"></script>
+
+<script>
+const video = document.getElementById('webcam');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+let camera = null;
+
+// Replace this with your Hugging Face model URL (raw link to model.json)
+const modelUrl = "https://huggingface.co/Imsoyam/ocrv1/raw/main/model.json";
+let model = null;
+const labels = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+
+// Load TF.js model from Hugging Face
+async function loadSignModel() {
+  model = await tf.loadLayersModel(modelUrl);
+  console.log("Model loaded from Hugging Face!");
+}
+loadSignModel();
+
+// MediaPipe Hands setup
+const hands = new Hands({locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`});
+hands.setOptions({
+  maxNumHands: 2,
+  modelComplexity: 1,
+  minDetectionConfidence: 0.7,
+  minTrackingConfidence: 0.5
+});
+hands.onResults(onResults);
+
+// Start webcam
+document.getElementById('startBtn').addEventListener('click', async () => {
+  camera = new Camera(video, {
+    onFrame: async () => { await hands.send({image: video}); },
+    width: 640,
+    height: 480
+  });
+  camera.start();
+  document.getElementById('startBtn').disabled = true;
+  document.getElementById('stopBtn').disabled = false;
+});
+
+// Stop webcam
+document.getElementById('stopBtn').addEventListener('click', () => {
+  if(camera) camera.stop();
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  document.getElementById('startBtn').disabled = false;
+  document.getElementById('stopBtn').disabled = true;
+});
+
+// Results callback
+async function onResults(results) {
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+
+  if(results.multiHandLandmarks && results.multiHandLandmarks.length > 0){
+    for(let i=0; i<results.multiHandLandmarks.length; i++){
+      const landmarks = results.multiHandLandmarks[i];
+      // Compute bounding box
+      let minX=1, minY=1, maxX=0, maxY=0;
+      for(const lm of landmarks){
+        minX = Math.min(minX, lm.x);
+        minY = Math.min(minY, lm.y);
+        maxX = Math.max(maxX, lm.x);
+        maxY = Math.max(maxY, lm.y);
+      }
+      minX *= canvas.width; minY *= canvas.height;
+      maxX *= canvas.width; maxY *= canvas.height;
+      const width = maxX - minX;
+      const height = maxY - minY;
+
+      // Draw bounding box
+      ctx.strokeStyle = 'lime';
+      ctx.lineWidth = 3;
+      ctx.strokeRect(minX, minY, width, height);
+
+      // Predict using the cropped hand region
+      if(model && width>0 && height>0){
+        // Use offscreen canvas to crop hand
+        const tmpCanvas = document.createElement('canvas');
+        tmpCanvas.width = width;
+        tmpCanvas.height = height;
+        const tmpCtx = tmpCanvas.getContext('2d');
+        tmpCtx.drawImage(video, minX, minY, width, height, 0, 0, width, height);
+
+        // Preprocess for model
+        const tfImg = tf.browser.fromPixels(tmpCanvas)
+                        .resizeBilinear([64,64])
+                        .toFloat().div(255.0)
+                        .expandDims(0);
+        const pred = model.predict(tfImg);
+        const predIndex = pred.argMax(-1).dataSync()[0];
+        const predLabel = labels[predIndex];
+        tfImg.dispose(); pred.dispose();
+
+        // Draw predicted label
+        ctx.font = '20px Arial';
+        ctx.fillStyle = 'yellow';
+        ctx.fillText(predLabel, minX, minY>20?minY-5:minY+15);
+      }
+    }
+  }
+}
+</script>
+
+</body>
+</html>
